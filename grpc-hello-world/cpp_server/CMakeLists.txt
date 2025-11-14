@@ -1,38 +1,36 @@
 cmake_minimum_required(VERSION 3.8)
-
-project(HelloWorld C CXX)
-
+project(NetworkInfoServer C CXX)
 include(../cmake/common.cmake)
 
-# Proto file
-get_filename_component(hw_proto "../proto/helloworld.proto" ABSOLUTE)
-get_filename_component(hw_proto_path "${hw_proto}" PATH)
+get_filename_component(proto_file "../proto/network.proto" ABSOLUTE)
+get_filename_component(proto_path "${proto_file}" PATH)
 
-# Generated sources
-set(hw_proto_srcs "${CMAKE_CURRENT_BINARY_DIR}/helloworld.pb.cc")
-set(hw_proto_hdrs "${CMAKE_CURRENT_BINARY_DIR}/helloworld.pb.h")
-set(hw_grpc_srcs "${CMAKE_CURRENT_BINARY_DIR}/helloworld.grpc.pb.cc")
-set(hw_grpc_hdrs "${CMAKE_CURRENT_BINARY_DIR}/helloworld.grpc.pb.h")
+set(proto_srcs "${CMAKE_CURRENT_BINARY_DIR}/network.pb.cc")
+set(proto_hdrs "${CMAKE_CURRENT_BINARY_DIR}/network.pb.h")
+set(grpc_srcs "${CMAKE_CURRENT_BINARY_DIR}/network.grpc.pb.cc")
+set(grpc_hdrs "${CMAKE_CURRENT_BINARY_DIR}/network.grpc.pb.h")
 
 add_custom_command(
-      OUTPUT "${hw_proto_srcs}" "${hw_proto_hdrs}" "${hw_grpc_srcs}" "${hw_grpc_hdrs}"
-      COMMAND ${_PROTOBUF_PROTOC}
-      ARGS --grpc_out "${CMAKE_CURRENT_BINARY_DIR}"
-        --cpp_out "${CMAKE_CURRENT_BINARY_DIR}"
-        -I "${hw_proto_path}"
-        --plugin=protoc-gen-grpc="${_GRPC_CPP_PLUGIN_EXECUTABLE}"
-        "${hw_proto}"
-      DEPENDS "${hw_proto}")
+  OUTPUT "${proto_srcs}" "${proto_hdrs}" "${grpc_srcs}" "${grpc_hdrs}"
+  COMMAND ${_PROTOBUF_PROTOC}
+  ARGS --grpc_out "${CMAKE_CURRENT_BINARY_DIR}"
+       --cpp_out "${CMAKE_CURRENT_BINARY_DIR}"
+       -I "${proto_path}"
+       --plugin=protoc-gen-grpc="${_GRPC_CPP_PLUGIN_EXECUTABLE}"
+       "${proto_file}"
+  DEPENDS "${proto_file}"
+)
 
-# Include generated *.pb.h files
 include_directories("${CMAKE_CURRENT_BINARY_DIR}")
 
-# Targets greeter_server
 add_executable(server
   server.cpp
-  ${hw_proto_srcs}
-  ${hw_grpc_srcs})
+  ${proto_srcs}
+  ${grpc_srcs}
+)
+
 target_link_libraries(server
   ${_REFLECTION}
   ${_GRPC_GRPCPP}
-  ${_PROTOBUF_LIBPROTOBUF})
+  ${_PROTOBUF_LIBPROTOBUF}
+)

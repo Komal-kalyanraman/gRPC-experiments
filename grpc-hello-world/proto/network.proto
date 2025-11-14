@@ -1,0 +1,34 @@
+syntax = "proto3";
+
+package network;
+
+// Message for Wi-Fi interface details
+message WifiInterface {
+  string name = 1;
+  repeated string flags = 2;
+  uint32 mtu = 3;
+  string ipv4 = 4;
+  string netmask = 5;
+  string broadcast = 6;
+  repeated string ipv6 = 7;
+  string mac = 8;
+  uint64 rx_packets = 9;
+  uint64 rx_bytes = 10;
+  uint64 tx_packets = 11;
+  uint64 tx_bytes = 12;
+}
+
+// Request: client sends Wi-Fi details
+message WifiInfoRequest {
+  WifiInterface wifi = 1;
+}
+
+// Reply: server acknowledges
+message WifiInfoReply {
+  string status = 1;
+}
+
+// Service definition
+service NetworkInfo {
+  rpc SendWifiInfo (WifiInfoRequest) returns (WifiInfoReply);
+}
