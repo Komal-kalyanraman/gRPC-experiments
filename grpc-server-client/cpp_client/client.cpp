@@ -3,15 +3,7 @@
 #include <string>
 #include <thread>
 #include <chrono>
-#include <cstring>
-#include <ifaddrs.h>
-#include <netinet/in.h>
-#include <arpa/inet.h>
-#include <net/if.h>
-#include <netdb.h>
-#include <fstream>
-#include <sstream>
-
+#include <vector>
 #include <grpcpp/grpcpp.h>
 #include "network.grpc.pb.h"
 
@@ -23,129 +15,79 @@ using network::NodeMetrics;
 using network::MetricsAck;
 using network::NetworkMonitoring;
 
+// Node template struct
+struct NodeTemplate {
+    std::string interface_name;
+    std::string ipv4;
+    std::string netmask;
+    std::string broadcast;
+    std::vector<std::string> ipv6;
+    std::string mac;
+    uint32_t mtu;
+};
+
+// 10 node templates
+static const NodeTemplate node_templates[10] = {
+    {"ifc-01", "10.0.0.1", "255.255.255.0", "10.0.0.255", {"fe80::1"}, "AA:BB:CC:DD:EE:01", 1500},
+    {"ifc-02", "10.0.0.2", "255.255.255.0", "10.0.0.255", {"fe80::2"}, "AA:BB:CC:DD:EE:02", 1500},
+    {"ifc-03", "10.0.0.3", "255.255.255.0", "10.0.0.255", {"fe80::3"}, "AA:BB:CC:DD:EE:03", 1500},
+    {"ifc-04", "10.0.0.4", "255.255.255.0", "10.0.0.255", {"fe80::4"}, "AA:BB:CC:DD:EE:04", 1500},
+    {"ifc-05", "10.0.0.5", "255.255.255.0", "10.0.0.255", {"fe80::5"}, "AA:BB:CC:DD:EE:05", 1500},
+    {"ifc-06", "10.0.0.6", "255.255.255.0", "10.0.0.255", {"fe80::6"}, "AA:BB:CC:DD:EE:06", 1500},
+    {"ifc-07", "10.0.0.7", "255.255.255.0", "10.0.0.255", {"fe80::7"}, "AA:BB:CC:DD:EE:07", 1500},
+    {"ifc-08", "10.0.0.8", "255.255.255.0", "10.0.0.255", {"fe80::8"}, "AA:BB:CC:DD:EE:08", 1500},
+    {"ifc-09", "10.0.0.9", "255.255.255.0", "10.0.0.255", {"fe80::9"}, "AA:BB:CC:DD:EE:09", 1500},
+    {"ifc-10", "10.0.0.10", "255.255.255.0", "10.0.0.255", {"fe80::10"}, "AA:BB:CC:DD:EE:10", 1500}
+};
+
 class NetworkMonitoringClient {
 private:
     std::unique_ptr<NetworkMonitoring::Stub> stub_;
     std::string node_id_;
-
-    void GetNodeStats(const std::string& interface, 
-                      uint64_t& rx_packets, uint64_t& rx_bytes,
-                      uint64_t& tx_packets, uint64_t& tx_bytes,
-                      uint32_t& rx_errors, uint32_t& tx_errors) {
-        // Read from /proc/net/dev
-        std::ifstream dev_file("/proc/net/dev");
-        std::string line;
-        
-        while (std::getline(dev_file, line)) {
-            if (line.find(interface) != std::string::npos) {
-                std::istringstream iss(line);
-                std::string iface;
-                iss >> iface; // interface name with colon
-                
-                // Read: rx_bytes rx_packets rx_errs rx_drop ... tx_bytes tx_packets tx_errs ...
-                uint64_t dummy;
-                iss >> rx_bytes >> rx_packets >> rx_errors;
-                for (int i = 0; i < 5; ++i) iss >> dummy; // skip
-                iss >> tx_bytes >> tx_packets >> tx_errors;
-                return;
-            }
-        }
-        
-        // Defaults if not found
-        rx_packets = rx_bytes = tx_packets = tx_bytes = 0;
-        rx_errors = tx_errors = 0;
-    }
+    int node_idx_;
 
     bool PopulateNodeMetrics(NodeMetrics* metrics) {
         metrics->set_node_id(node_id_);
-        
+
+        // Use template for parameters
+        const NodeTemplate& tpl = node_templates[node_idx_];
+        metrics->set_interface_name(tpl.interface_name);
+        metrics->set_mtu(tpl.mtu);
+        metrics->set_ipv4(tpl.ipv4);
+        metrics->set_netmask(tpl.netmask);
+        metrics->set_broadcast(tpl.broadcast);
+        metrics->set_mac(tpl.mac);
+        for (const auto& ip6 : tpl.ipv6) metrics->add_ipv6(ip6);
+
+        // Flags (example)
+        metrics->add_flags("UP");
+        metrics->add_flags("BROADCAST");
+        metrics->add_flags("RUNNING");
+        metrics->add_flags("MULTICAST");
+
+        // Timestamp
         auto now = std::chrono::system_clock::now();
         auto duration = now.time_since_epoch();
         auto seconds = std::chrono::duration_cast<std::chrono::seconds>(duration);
-        
         metrics->mutable_timestamp()->set_seconds(seconds.count());
 
-        struct ifaddrs *ifaddr, *ifa;
-        if (getifaddrs(&ifaddr) == -1) {
-            return false;
-        }
-
-        bool found = false;
-        for (ifa = ifaddr; ifa != NULL; ifa = ifa->ifa_next) {
-            if (ifa->ifa_addr == NULL) continue;
-            if (std::string(ifa->ifa_name) != "wlp0s20f3") continue;
-
-            found = true;
-            metrics->set_interface_name(ifa->ifa_name);
-            metrics->set_mtu(1500);
-
-            // Flags
-            if (ifa->ifa_flags & IFF_UP) metrics->add_flags("UP");
-            if (ifa->ifa_flags & IFF_BROADCAST) metrics->add_flags("BROADCAST");
-            if (ifa->ifa_flags & IFF_RUNNING) metrics->add_flags("RUNNING");
-            if (ifa->ifa_flags & IFF_MULTICAST) metrics->add_flags("MULTICAST");
-
-            // IP addresses
-            int family = ifa->ifa_addr->sa_family;
-            char host[NI_MAXHOST];
-            
-            if (family == AF_INET) {
-                getnameinfo(ifa->ifa_addr, sizeof(struct sockaddr_in),
-                           host, NI_MAXHOST, NULL, 0, NI_NUMERICHOST);
-                metrics->set_ipv4(host);
-
-                if (ifa->ifa_netmask) {
-                    char netmask[NI_MAXHOST];
-                    getnameinfo(ifa->ifa_netmask, sizeof(struct sockaddr_in),
-                               netmask, NI_MAXHOST, NULL, 0, NI_NUMERICHOST);
-                    metrics->set_netmask(netmask);
-                }
-                
-                if (ifa->ifa_broadaddr) {
-                    char broadcast[NI_MAXHOST];
-                    getnameinfo(ifa->ifa_broadaddr, sizeof(struct sockaddr_in),
-                               broadcast, NI_MAXHOST, NULL, 0, NI_NUMERICHOST);
-                    metrics->set_broadcast(broadcast);
-                }
-            } else if (family == AF_INET6) {
-                getnameinfo(ifa->ifa_addr, sizeof(struct sockaddr_in6),
-                           host, NI_MAXHOST, NULL, 0, NI_NUMERICHOST);
-                metrics->add_ipv6(host);
-            }
-        }
-
-        freeifaddrs(ifaddr);
-
-        if (!found) {
-            return false;
-        }
-
-        // Get packet statistics
-        uint64_t rx_packets, rx_bytes, tx_packets, tx_bytes;
-        uint32_t rx_errors, tx_errors;
-        GetNodeStats("wlp0s20f3", rx_packets, rx_bytes, tx_packets, tx_bytes, 
-                     rx_errors, tx_errors);
-        
-        metrics->set_rx_packets(rx_packets);
-        metrics->set_rx_bytes(rx_bytes);
-        metrics->set_tx_packets(tx_packets);
-        metrics->set_tx_bytes(tx_bytes);
-        metrics->set_rx_errors(rx_errors);
-        metrics->set_tx_errors(tx_errors);
-        
-        // MAC address placeholder
-        metrics->set_mac("70:cf:49:b8:48:72");
+        // Simulate stats (unique per node)
+        metrics->set_rx_packets(10000 * (node_idx_ + 1));
+        metrics->set_rx_bytes(1000000 * (node_idx_ + 1));
+        metrics->set_tx_packets(5000 * (node_idx_ + 1));
+        metrics->set_tx_bytes(500000 * (node_idx_ + 1));
+        metrics->set_rx_errors(0);
+        metrics->set_tx_errors(0);
 
         return true;
     }
 
 public:
-    NetworkMonitoringClient(std::shared_ptr<Channel> channel, const std::string& node_id)
-        : stub_(NetworkMonitoring::NewStub(channel)), node_id_(node_id) {}
+    NetworkMonitoringClient(std::shared_ptr<Channel> channel, const std::string& node_id, int node_idx)
+        : stub_(NetworkMonitoring::NewStub(channel)), node_id_(node_id), node_idx_(node_idx) {}
 
     void StreamNodeMetrics(int interval_seconds = 5, int duration_seconds = 300) {
         ClientContext context;
-        
         std::shared_ptr<ClientReaderWriter<NodeMetrics, MetricsAck>> stream(
             stub_->StreamNodeMetrics(&context));
 
@@ -167,11 +109,7 @@ public:
                 }
 
                 NodeMetrics metrics;
-                if (!PopulateNodeMetrics(&metrics)) {
-                    std::cerr << "[Client] Failed to get node metrics" << std::endl;
-                    std::this_thread::sleep_for(std::chrono::seconds(interval_seconds));
-                    continue;
-                }
+                PopulateNodeMetrics(&metrics);
 
                 std::cout << "[Client] Sending node metrics (batch #" << ++metrics_count << ")" 
                           << std::endl;
@@ -208,14 +146,25 @@ public:
 
 int main(int argc, char** argv) {
     std::string target_str("localhost:50051");
-    std::string node_id("node-01");
+    std::string node_id;
+    int node_idx = 0;
 
+    // Node name template: node-01 to node-10
     if (argc > 1) {
-        node_id = argv[1];
+        int node_num = std::stoi(argv[1]);
+        if (node_num < 1 || node_num > 10) {
+            std::cerr << "Node number must be between 1 and 10." << std::endl;
+            return 1;
+        }
+        node_idx = node_num - 1;
+        node_id = std::string("node-") + (node_num < 10 ? "0" : "") + std::to_string(node_num);
+    } else {
+        node_id = "node-01";
+        node_idx = 0;
     }
 
     auto channel = grpc::CreateChannel(target_str, grpc::InsecureChannelCredentials());
-    NetworkMonitoringClient client(channel, node_id);
+    NetworkMonitoringClient client(channel, node_id, node_idx);
 
     std::cout << "=== gRPC Network Monitoring Client ===" << std::endl;
     std::cout << "Node ID: " << node_id << std::endl;

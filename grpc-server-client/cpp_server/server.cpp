@@ -24,11 +24,14 @@ private:
     struct NodeConnection {
         std::string node_id;
         std::chrono::system_clock::time_point last_seen;
+        std::chrono::system_clock::time_point last_disconnected;
+        bool online = false;
+        std::chrono::seconds total_downtime{0};
     };
 
     std::mutex metrics_mutex_;
     mutable std::mutex nodes_mutex_;
-    std::map<std::string, NodeConnection> active_nodes_;
+    std::map<std::string, NodeConnection> node_status_;
     std::vector<NodeMetrics> metrics_history_;
     static const size_t MAX_METRICS_HISTORY = 1000;
 
@@ -76,10 +79,20 @@ public:
 
             {
                 std::lock_guard<std::mutex> lock(nodes_mutex_);
-                active_nodes_[node_id] = {
-                    node_id,
-                    std::chrono::system_clock::now()
-                };
+                auto& node = node_status_[node_id];
+                node.node_id = node_id;
+                node.last_seen = std::chrono::system_clock::now();
+                bool was_offline = !node.online;
+                node.online = true;
+
+                // If node was previously offline, add downtime to total
+                if (was_offline && node.last_disconnected.time_since_epoch().count() > 0) {
+                    auto downtime = std::chrono::duration_cast<std::chrono::seconds>(
+                        node.last_seen - node.last_disconnected);
+                    node.total_downtime += downtime;
+                    std::cout << "[Server] Node " << node_id << " was down for " << downtime.count() << " seconds." << std::endl;
+                    node.last_disconnected = std::chrono::system_clock::time_point();
+                }
             }
 
             // Store metrics
@@ -117,7 +130,9 @@ public:
         std::cout << "🔴 [StreamNodeMetrics] Connection lost for node " << node_id << std::endl;
         {
             std::lock_guard<std::mutex> lock(nodes_mutex_);
-            active_nodes_.erase(node_id);
+            auto& node = node_status_[node_id];
+            node.online = false;
+            node.last_disconnected = std::chrono::system_clock::now();
         }
 
         return Status::OK;
@@ -125,11 +140,20 @@ public:
 
     void PrintActiveNodes() const {
         std::lock_guard<std::mutex> lock(nodes_mutex_);
-        std::cout << "\n=== Active Nodes ===" << std::endl;
-        for (const auto& entry : active_nodes_) {
-            auto duration = std::chrono::system_clock::now() - entry.second.last_seen;
-            auto seconds = std::chrono::duration_cast<std::chrono::seconds>(duration).count();
-            std::cout << "  - " << entry.first << " (last seen " << seconds << "s ago)" << std::endl;
+        std::cout << "\n=== Node Status ===" << std::endl;
+        for (const auto& entry : node_status_) {
+            const auto& node = entry.second;
+            if (node.online) {
+                auto duration = std::chrono::system_clock::now() - node.last_seen;
+                auto seconds = std::chrono::duration_cast<std::chrono::seconds>(duration).count();
+                std::cout << "  - " << node.node_id << " (last seen " << seconds << "s ago, ONLINE, total downtime: " << node.total_downtime.count() << "s)" << std::endl;
+            } else if (node.last_disconnected.time_since_epoch().count() > 0) {
+                auto duration = std::chrono::system_clock::now() - node.last_disconnected;
+                auto seconds = std::chrono::duration_cast<std::chrono::seconds>(duration).count();
+                std::cout << "  - " << node.node_id << " (still down, down for " << seconds << "s, total downtime: " << (node.total_downtime + std::chrono::seconds(seconds)).count() << "s)" << std::endl;
+            } else {
+                std::cout << "  - " << node.node_id << " (never connected)" << std::endl;
+            }
         }
     }
 };
@@ -150,10 +174,10 @@ void RunServer() {
     std::cout << "Network Monitoring Server listening on " << server_address << std::endl;
     std::cout << "Waiting for node metric streams from nodes..." << std::endl;
 
-    // Periodically print active nodes
+    // Periodically print node status
     std::thread status_thread([&service]() {
         while (true) {
-            std::this_thread::sleep_for(std::chrono::seconds(30));
+            std::this_thread::sleep_for(std::chrono::seconds(20));
             service.PrintActiveNodes();
         }
     });
