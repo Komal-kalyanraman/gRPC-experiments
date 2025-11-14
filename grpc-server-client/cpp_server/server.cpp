@@ -15,7 +15,7 @@ using grpc::ServerBuilder;
 using grpc::ServerContext;
 using grpc::ServerReaderWriter;
 using grpc::Status;
-using network::WifiMetrics;
+using network::NodeMetrics;
 using network::MetricsAck;
 using network::NetworkMonitoring;
 
@@ -27,13 +27,13 @@ private:
     };
 
     std::mutex metrics_mutex_;
-    mutable std::mutex nodes_mutex_;  // <-- Add 'mutable' here
+    mutable std::mutex nodes_mutex_;
     std::map<std::string, NodeConnection> active_nodes_;
-    std::vector<WifiMetrics> metrics_history_;
+    std::vector<NodeMetrics> metrics_history_;
     static const size_t MAX_METRICS_HISTORY = 1000;
 
-    void LogMetrics(const WifiMetrics& metrics) {
-        std::cout << "\n=== Wi-Fi Metrics from Node: " << metrics.node_id() << " ===" << std::endl;
+    void LogMetrics(const NodeMetrics& metrics) {
+        std::cout << "\n=== Node Metrics from Node: " << metrics.node_id() << " ===" << std::endl;
         std::cout << "Interface: " << metrics.interface_name() << std::endl;
         std::cout << "Timestamp: " << metrics.timestamp().seconds() << std::endl;
         
@@ -63,22 +63,13 @@ private:
                   << metrics.tx_errors() << " errors" << std::endl;
     }
 
-    void DetectAnomalies(const WifiMetrics& metrics) {
-        if (metrics.rx_errors() > 0 || metrics.tx_errors() > 0) {
-            std::cerr << "\n⚠️  ALERT: Node " << metrics.node_id() 
-                      << " interface " << metrics.interface_name()
-                      << " has errors - RX: " << metrics.rx_errors()
-                      << ", TX: " << metrics.tx_errors() << std::endl;
-        }
-    }
-
 public:
-    Status StreamWifiMetrics(ServerContext* context,
-                            ServerReaderWriter<MetricsAck, WifiMetrics>* stream) override {
-        WifiMetrics metrics;
+    Status StreamNodeMetrics(ServerContext* context,
+                            ServerReaderWriter<MetricsAck, NodeMetrics>* stream) override {
+        NodeMetrics metrics;
         std::string node_id;
 
-        std::cout << "\n[StreamWifiMetrics] New streaming connection established" << std::endl;
+        std::cout << "\n[StreamNodeMetrics] New streaming connection established" << std::endl;
 
         while (stream->Read(&metrics)) {
             node_id = metrics.node_id();
@@ -100,9 +91,8 @@ public:
                 }
             }
 
-            // Log and analyze metrics
+            // Log metrics
             LogMetrics(metrics);
-            DetectAnomalies(metrics);
 
             // Send acknowledgment
             MetricsAck ack;
@@ -114,17 +104,17 @@ public:
             auto seconds = std::chrono::duration_cast<std::chrono::seconds>(duration);
             
             ack.mutable_server_timestamp()->set_seconds(seconds.count());
-            ack.set_message("Wi-Fi metrics received and stored");
+            ack.set_message("Node metrics received and stored");
 
             if (!stream->Write(ack)) {
                 std::cerr << "Failed to send acknowledgment to node " << node_id << std::endl;
                 return Status(grpc::StatusCode::INTERNAL, "Failed to send ack");
             }
 
-            std::cout << "[StreamWifiMetrics] Acknowledgment sent to " << node_id << std::endl;
+            std::cout << "[StreamNodeMetrics] Acknowledgment sent to " << node_id << std::endl;
         }
 
-        std::cout << "[StreamWifiMetrics] Connection closed for node " << node_id << std::endl;
+        std::cout << "🔴 [StreamNodeMetrics] Connection lost for node " << node_id << std::endl;
         {
             std::lock_guard<std::mutex> lock(nodes_mutex_);
             active_nodes_.erase(node_id);
@@ -158,7 +148,7 @@ void RunServer() {
 
     std::unique_ptr<Server> server(builder.BuildAndStart());
     std::cout << "Network Monitoring Server listening on " << server_address << std::endl;
-    std::cout << "Waiting for Wi-Fi metric streams from nodes..." << std::endl;
+    std::cout << "Waiting for node metric streams from nodes..." << std::endl;
 
     // Periodically print active nodes
     std::thread status_thread([&service]() {

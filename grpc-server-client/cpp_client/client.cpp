@@ -19,7 +19,7 @@ using grpc::Channel;
 using grpc::ClientContext;
 using grpc::ClientReaderWriter;
 using grpc::Status;
-using network::WifiMetrics;
+using network::NodeMetrics;
 using network::MetricsAck;
 using network::NetworkMonitoring;
 
@@ -28,7 +28,7 @@ private:
     std::unique_ptr<NetworkMonitoring::Stub> stub_;
     std::string node_id_;
 
-    void GetWifiStats(const std::string& interface, 
+    void GetNodeStats(const std::string& interface, 
                       uint64_t& rx_packets, uint64_t& rx_bytes,
                       uint64_t& tx_packets, uint64_t& tx_bytes,
                       uint32_t& rx_errors, uint32_t& tx_errors) {
@@ -56,7 +56,7 @@ private:
         rx_errors = tx_errors = 0;
     }
 
-    bool PopulateWifiMetrics(WifiMetrics* metrics) {
+    bool PopulateNodeMetrics(NodeMetrics* metrics) {
         metrics->set_node_id(node_id_);
         
         auto now = std::chrono::system_clock::now();
@@ -123,7 +123,7 @@ private:
         // Get packet statistics
         uint64_t rx_packets, rx_bytes, tx_packets, tx_bytes;
         uint32_t rx_errors, tx_errors;
-        GetWifiStats("wlp0s20f3", rx_packets, rx_bytes, tx_packets, tx_bytes, 
+        GetNodeStats("wlp0s20f3", rx_packets, rx_bytes, tx_packets, tx_bytes, 
                      rx_errors, tx_errors);
         
         metrics->set_rx_packets(rx_packets);
@@ -143,13 +143,13 @@ public:
     NetworkMonitoringClient(std::shared_ptr<Channel> channel, const std::string& node_id)
         : stub_(NetworkMonitoring::NewStub(channel)), node_id_(node_id) {}
 
-    void StreamWifiMetrics(int interval_seconds = 5, int duration_seconds = 300) {
+    void StreamNodeMetrics(int interval_seconds = 5, int duration_seconds = 300) {
         ClientContext context;
         
-        std::shared_ptr<ClientReaderWriter<WifiMetrics, MetricsAck>> stream(
-            stub_->StreamWifiMetrics(&context));
+        std::shared_ptr<ClientReaderWriter<NodeMetrics, MetricsAck>> stream(
+            stub_->StreamNodeMetrics(&context));
 
-        std::cout << "[Client] Starting Wi-Fi metrics stream for node: " << node_id_ << std::endl;
+        std::cout << "[Client] Starting node metrics stream for node: " << node_id_ << std::endl;
 
         // Sending thread
         std::thread send_thread([this, stream, interval_seconds, duration_seconds]() {
@@ -166,14 +166,14 @@ public:
                     break;
                 }
 
-                WifiMetrics metrics;
-                if (!PopulateWifiMetrics(&metrics)) {
-                    std::cerr << "[Client] Failed to get Wi-Fi metrics" << std::endl;
+                NodeMetrics metrics;
+                if (!PopulateNodeMetrics(&metrics)) {
+                    std::cerr << "[Client] Failed to get node metrics" << std::endl;
                     std::this_thread::sleep_for(std::chrono::seconds(interval_seconds));
                     continue;
                 }
 
-                std::cout << "[Client] Sending Wi-Fi metrics (batch #" << ++metrics_count << ")" 
+                std::cout << "[Client] Sending node metrics (batch #" << ++metrics_count << ")" 
                           << std::endl;
 
                 if (!stream->Write(metrics)) {
@@ -201,13 +201,14 @@ public:
         } else {
             std::cerr << "[Client] Error: " << status.error_code() << " - "
                       << status.error_message() << std::endl;
+            std::cerr << "[Client] Connection to server lost or closed unexpectedly." << std::endl;
         }
     }
 };
 
 int main(int argc, char** argv) {
     std::string target_str("localhost:50051");
-    std::string node_id("wifi-client-01");
+    std::string node_id("node-01");
 
     if (argc > 1) {
         node_id = argv[1];
@@ -220,8 +221,8 @@ int main(int argc, char** argv) {
     std::cout << "Node ID: " << node_id << std::endl;
     std::cout << "Server: " << target_str << std::endl;
 
-    // Stream Wi-Fi metrics every 5 seconds for 5 minutes
-    client.StreamWifiMetrics(5, 300);
+    // Stream node metrics every 5 seconds for 5 minutes
+    client.StreamNodeMetrics(5, 300);
 
     return 0;
 }

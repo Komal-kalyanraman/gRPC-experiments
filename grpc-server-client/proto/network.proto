@@ -4,8 +4,8 @@ package network;
 
 import "google/protobuf/timestamp.proto";
 
-// Wi-Fi interface metrics
-message WifiMetrics {
+// Node interface metrics
+message NodeMetrics {
   string node_id = 1;
   string interface_name = 2;
   google.protobuf.Timestamp timestamp = 3;
@@ -36,6 +36,6 @@ message MetricsAck {
 
 // Service definition
 service NetworkMonitoring {
-  // Bidirectional streaming: client pushes Wi-Fi metrics, server sends acks
-  rpc StreamWifiMetrics(stream WifiMetrics) returns (stream MetricsAck);
+  // Bidirectional streaming: client pushes node metrics, server sends acks
+  rpc StreamNodeMetrics(stream NodeMetrics) returns (stream MetricsAck);
 }
