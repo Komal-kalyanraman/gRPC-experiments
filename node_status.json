@@ -15,9 +15,9 @@
         "total_downtime": 0
     },
     "node-04": {
-        "last_seen": 1763130376,
+        "last_seen": 0,
         "status": "offline",
-        "total_downtime": 38
+        "total_downtime": 0
     },
     "node-05": {
         "last_seen": 0,
@@ -30,9 +30,9 @@
         "total_downtime": 0
     },
     "node-07": {
-        "last_seen": 1763130416,
+        "last_seen": 0,
         "status": "offline",
-        "total_downtime": 21
+        "total_downtime": 0
     },
     "node-08": {
         "last_seen": 0,
