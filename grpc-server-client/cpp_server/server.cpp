@@ -1,4 +1,5 @@
 #include <iostream>
+#include <fstream>
 #include <memory>
 #include <string>
 #include <thread>
@@ -6,6 +7,7 @@
 #include <map>
 #include <vector>
 #include <chrono>
+#include <nlohmann/json.hpp>
 
 #include <grpcpp/grpcpp.h>
 #include "network.grpc.pb.h"
@@ -18,6 +20,9 @@ using grpc::Status;
 using network::NodeMetrics;
 using network::MetricsAck;
 using network::NetworkMonitoring;
+using json = nlohmann::json;
+
+const std::string STATUS_FILE = "../../../node_status.json";
 
 class NetworkMonitoringServiceImpl final : public NetworkMonitoring::Service {
 private:
@@ -34,6 +39,58 @@ private:
     std::map<std::string, NodeConnection> node_status_;
     std::vector<NodeMetrics> metrics_history_;
     static const size_t MAX_METRICS_HISTORY = 1000;
+
+    // Initialize JSON file with default values
+    void InitStatusFile() {
+        json j;
+        for (int i = 1; i <= 10; ++i) {
+            std::string node = std::string("node-") + (i < 10 ? "0" : "") + std::to_string(i);
+            j[node] = {
+                {"status", "offline"},
+                {"total_downtime", 0},
+                {"last_seen", 0}
+            };
+            // Also initialize in-memory status
+            NodeConnection nc;
+            nc.node_id = node;
+            nc.online = false;
+            nc.total_downtime = std::chrono::seconds(0);
+            nc.last_seen = std::chrono::system_clock::time_point();
+            nc.last_disconnected = std::chrono::system_clock::time_point();
+            node_status_[node] = nc;
+        }
+        std::ofstream ofs(STATUS_FILE);
+        ofs << j.dump(4);
+        ofs.close();
+    }
+
+    // Update JSON file with current node status
+    void UpdateStatusFile() {
+        json j;
+        for (const auto& entry : node_status_) {
+            const auto& node = entry.second;
+            std::string status = node.online ? "online" : "offline";
+            long last_seen = 0;
+            if (node.online || node.last_seen.time_since_epoch().count() > 0) {
+                last_seen = std::chrono::duration_cast<std::chrono::seconds>(
+                    node.last_seen.time_since_epoch()).count();
+            }
+            long total_downtime = node.total_downtime.count();
+            if (!node.online && node.last_disconnected.time_since_epoch().count() > 0) {
+                auto current_down = std::chrono::duration_cast<std::chrono::seconds>(
+                    std::chrono::system_clock::now() - node.last_disconnected).count();
+                total_downtime += current_down;
+            }
+            j[node.node_id] = {
+                {"status", status},
+                {"total_downtime", total_downtime},
+                {"last_seen", last_seen}
+            };
+        }
+        std::ofstream ofs(STATUS_FILE);
+        ofs << j.dump(4);
+        ofs.close();
+    }
 
     void LogMetrics(const NodeMetrics& metrics) {
         std::cout << "\n=== Node Metrics from Node: " << metrics.node_id() << " ===" << std::endl;
@@ -67,6 +124,10 @@ private:
     }
 
 public:
+    NetworkMonitoringServiceImpl() {
+        InitStatusFile();
+    }
+
     Status StreamNodeMetrics(ServerContext* context,
                             ServerReaderWriter<MetricsAck, NodeMetrics>* stream) override {
         NodeMetrics metrics;
@@ -93,6 +154,7 @@ public:
                     std::cout << "[Server] Node " << node_id << " was down for " << downtime.count() << " seconds." << std::endl;
                     node.last_disconnected = std::chrono::system_clock::time_point();
                 }
+                UpdateStatusFile();
             }
 
             // Store metrics
@@ -133,6 +195,7 @@ public:
             auto& node = node_status_[node_id];
             node.online = false;
             node.last_disconnected = std::chrono::system_clock::now();
+            UpdateStatusFile();
         }
 
         return Status::OK;
@@ -166,7 +229,6 @@ void RunServer() {
     builder.AddListeningPort(server_address, grpc::InsecureServerCredentials());
     builder.RegisterService(&service);
     
-    // Set max message size to 4MB
     builder.SetMaxReceiveMessageSize(4 * 1024 * 1024);
     builder.SetMaxSendMessageSize(4 * 1024 * 1024);
 
@@ -174,7 +236,6 @@ void RunServer() {
     std::cout << "Network Monitoring Server listening on " << server_address << std::endl;
     std::cout << "Waiting for node metric streams from nodes..." << std::endl;
 
-    // Periodically print node status
     std::thread status_thread([&service]() {
         while (true) {
             std::this_thread::sleep_for(std::chrono::seconds(20));

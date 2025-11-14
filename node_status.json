@@ -1,0 +1,52 @@
+{
+    "node-01": {
+        "last_seen": 0,
+        "status": "offline",
+        "total_downtime": 0
+    },
+    "node-02": {
+        "last_seen": 0,
+        "status": "offline",
+        "total_downtime": 0
+    },
+    "node-03": {
+        "last_seen": 0,
+        "status": "offline",
+        "total_downtime": 0
+    },
+    "node-04": {
+        "last_seen": 1763130376,
+        "status": "offline",
+        "total_downtime": 38
+    },
+    "node-05": {
+        "last_seen": 0,
+        "status": "offline",
+        "total_downtime": 0
+    },
+    "node-06": {
+        "last_seen": 0,
+        "status": "offline",
+        "total_downtime": 0
+    },
+    "node-07": {
+        "last_seen": 1763130416,
+        "status": "offline",
+        "total_downtime": 21
+    },
+    "node-08": {
+        "last_seen": 0,
+        "status": "offline",
+        "total_downtime": 0
+    },
+    "node-09": {
+        "last_seen": 0,
+        "status": "offline",
+        "total_downtime": 0
+    },
+    "node-10": {
+        "last_seen": 0,
+        "status": "offline",
+        "total_downtime": 0
+    }
+}
