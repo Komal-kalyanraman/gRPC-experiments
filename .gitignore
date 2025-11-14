@@ -1,7 +1,7 @@
-grpc-hello-world/cpp_server/build/*
-!grpc-hello-world/cpp_server/build/.keep
+grpc-server-client/cpp_server/build/*
+!grpc-server-client/cpp_server/build/.keep
 
-grpc-hello-world/python_client/__pycache__/
+grpc-server-client/python_client/__pycache__/
 
-grpc-hello-world/cpp_client/build/*
-!grpc-hello-world/cpp_client/build/.keep
+grpc-server-client/cpp_client/build/*
+!grpc-server-client/cpp_client/build/.keep
