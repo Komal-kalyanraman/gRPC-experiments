@@ -2,33 +2,40 @@ syntax = "proto3";
 
 package network;
 
-// Message for Wi-Fi interface details
-message WifiInterface {
-  string name = 1;
-  repeated string flags = 2;
-  uint32 mtu = 3;
-  string ipv4 = 4;
-  string netmask = 5;
-  string broadcast = 6;
-  repeated string ipv6 = 7;
-  string mac = 8;
-  uint64 rx_packets = 9;
-  uint64 rx_bytes = 10;
-  uint64 tx_packets = 11;
-  uint64 tx_bytes = 12;
+import "google/protobuf/timestamp.proto";
+
+// Wi-Fi interface metrics
+message WifiMetrics {
+  string node_id = 1;
+  string interface_name = 2;
+  google.protobuf.Timestamp timestamp = 3;
+  
+  repeated string flags = 4;
+  uint32 mtu = 5;
+  string ipv4 = 6;
+  string netmask = 7;
+  string broadcast = 8;
+  repeated string ipv6 = 9;
+  string mac = 10;
+  
+  uint64 rx_packets = 11;
+  uint64 rx_bytes = 12;
+  uint64 tx_packets = 13;
+  uint64 tx_bytes = 14;
+  uint32 rx_errors = 15;
+  uint32 tx_errors = 16;
 }
 
-// Request: client sends Wi-Fi details
-message WifiInfoRequest {
-  WifiInterface wifi = 1;
-}
-
-// Reply: server acknowledges
-message WifiInfoReply {
-  string status = 1;
+// Acknowledgment from server
+message MetricsAck {
+  string node_id = 1;
+  bool success = 2;
+  string message = 3;
+  google.protobuf.Timestamp server_timestamp = 4;
 }
 
 // Service definition
-service NetworkInfo {
-  rpc SendWifiInfo (WifiInfoRequest) returns (WifiInfoReply);
+service NetworkMonitoring {
+  // Bidirectional streaming: client pushes Wi-Fi metrics, server sends acks
+  rpc StreamWifiMetrics(stream WifiMetrics) returns (stream MetricsAck);
 }
