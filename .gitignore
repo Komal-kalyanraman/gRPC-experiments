@@ -1,7 +1,7 @@
 grpc-server-client/cpp_server/build/*
 !grpc-server-client/cpp_server/build/.keep
 
-grpc-server-client/python_client/__pycache__/
-
 grpc-server-client/cpp_client/build/*
 !grpc-server-client/cpp_client/build/.keep
+
+node_status.json

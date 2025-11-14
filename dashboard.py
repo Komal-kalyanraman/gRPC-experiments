@@ -3,7 +3,7 @@ from tkinter import ttk
 import json
 import os
 
-NODE_STATUS_FILE = "../node_status.json"
+NODE_STATUS_FILE = "node_status.json"
 REFRESH_INTERVAL_MS = 2000  # 2 seconds
 
 class NodeWidget(tk.Frame):
